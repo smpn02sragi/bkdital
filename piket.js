@@ -10,7 +10,7 @@
    ============================================================ */
 
 /* URL Web App — HARUS sama dengan DEFAULT_API_URL di script.js. */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwtzPQC8K0GJ7nPTvH3m36X55j0fEov7QyW6cexH0tIUVHUoiz3oGh7DiLYkRN_MGMV/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxTil90h9mhtfYzm0gxwb3p9uswatGxGLLkxFGFWkivswNXIGKy7jM2lP7QyJ6LX37G/exec';
 
 const LS_TOKEN = 'bk_piket_token';
 const LS_NAMA = 'bk_piket_nama';
@@ -83,11 +83,47 @@ function enterApp(){
   requestWakeLock();
 }
 
+/* Profil sekolah (nama + logo). Dibaca dari cache localStorage dulu supaya
+   langsung tampil (aplikasi utama memakai kunci yang sama di origin yang sama),
+   lalu diperbarui dari server. Halaman login memakai aksi publik
+   "getPublicProfile" karena belum punya token. */
+const LS_P_NAME = 'bk_piket_school_name', LS_P_LOGO = 'bk_piket_school_logo';
+const isImg = (v) => String(v || '').indexOf('data:image/') === 0;
+
+function applyProfile(name, logo){
+  if (name){
+    $('#schoolName').textContent = name;
+    $('#loginSchool').textContent = name;
+    document.title = 'Absensi QR — ' + name;
+  }
+  if (isImg(logo)){
+    $('#schoolLogo').src = logo;
+    $('#loginLogo').src = logo;
+    const fav = document.querySelector('link[rel="icon"]'); if (fav) fav.href = logo;
+  }
+}
+function applyCachedProfile(){
+  const name = localStorage.getItem(LS_P_NAME) || localStorage.getItem('bk_school_name') || '';
+  const logo = localStorage.getItem(LS_P_LOGO) || localStorage.getItem('bk_school_logo') || '';
+  applyProfile(name, logo);
+}
+function saveProfile(s){
+  if (!s) return;
+  if (s.NamaSekolah) localStorage.setItem(LS_P_NAME, s.NamaSekolah);
+  if (isImg(s.LogoSekolah)) localStorage.setItem(LS_P_LOGO, s.LogoSekolah);
+  applyProfile(s.NamaSekolah, s.LogoSekolah);
+}
+async function loadPublicProfile(){
+  try{
+    const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getPublicProfile' }) });
+    const json = await res.json();
+    if (json.ok) saveProfile(json.data);
+  }catch(e){ /* backend belum diperbarui / offline — pakai cache */ }
+}
+
 async function loadSchoolProfile(){
   try{
-    const s = await api('getSettings');
-    if (s && s.NamaSekolah) $('#schoolName').textContent = s.NamaSekolah;
-    if (s && s.LogoSekolah && String(s.LogoSekolah).startsWith('data:image/')) $('#schoolLogo').src = s.LogoSekolah;
+    saveProfile(await api('getSettings'));
   }catch(e){ if (isSessionError(e.message)) logout(e.message); }
 }
 
@@ -250,4 +286,6 @@ $('#refreshBtn').addEventListener('click', refreshToday);
 setInterval(refreshToday, 60000);
 
 /* ---------------- INIT ---------------- */
+applyCachedProfile();
+loadPublicProfile();
 if (TOKEN){ enterApp(); } else { $('#loginUser').focus(); }
